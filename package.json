@@ -1,0 +1,31 @@
+{
+  "name": "pharm36-backend",
+  "version": "1.0.0",
+  "description": "REST API for Pharm36 (Node.js + Express + MongoDB)",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed:admin": "node scripts/seed-admin.js",
+    "seed:demo": "node scripts/seed-demo.js",
+    "scan:expiry": "node scripts/run-expiry-scan.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.11.0",
+    "morgan": "^1.12.1",
+    "node-cron": "^4.6.0",
+    "zod": "^3.25.76"
+  }
+}
