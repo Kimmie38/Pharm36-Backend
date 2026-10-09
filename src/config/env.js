@@ -20,6 +20,11 @@ module.exports = {
   enableCron: bool(process.env.ENABLE_CRON, true),
   cronSchedule: process.env.CRON_SCHEDULE || '0 6 * * *',
   cronTimezone: process.env.CRON_TIMEZONE || 'Africa/Lagos',
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5', // builds the drug summary (once per drug, then cached)
+  anthropicAskModel: process.env.ANTHROPIC_ASK_MODEL || 'claude-haiku-4-5-20251001', // answers follow-up questions
+  openFdaApiKey: process.env.OPENFDA_API_KEY || '',
+  drugInfoTtlDays: Number(process.env.DRUG_INFO_TTL_DAYS) || 60,
   salesLevelHigh: Number(process.env.SALES_LEVEL_HIGH) || 8000,
   salesLevelMedium: Number(process.env.SALES_LEVEL_MEDIUM) || 3000,
 };

@@ -9,7 +9,7 @@ future PCN/VCN admin portal. Every endpoint is derived from what the screens in 
 ```bash
 cd pharm36-backend
 npm install
-cp .env.example .env            # or .env.local; .env.local takes precedence when both exist
+cp .env.example .env            # or use .env.local; .env.local takes precedence when both exist
 # Set JWT_SECRET to a unique random value and configure MONGODB_URI
 docker compose up -d            # optional: local MongoDB   (or use a MongoDB Atlas URI)
 npm run seed:demo               # optional: the same demo data the app shows today
@@ -60,6 +60,9 @@ Try scanning `5012345678901` or `5019988771234` in the Buyer app.
 | **Buyer app** scan result (public) | `GET /api/public/drugs/verify?batchCode=` |
 | **Buyer app** search by name (public) | `GET /api/public/drugs/search?q=` |
 | **Buyer app** report a problem (public) | `POST /api/public/reports` |
+| **Buyer app** drug info: uses, adult/child dosage, side effects, warnings (public) | `GET /api/public/drugs/info?batchCode=` or `?name=` |
+| **Buyer app** "ask about this drug" (public) | `POST /api/public/drugs/ask` `{batchCode\|name, question}` |
+| Admin: review/correct drug info | `GET /api/admin/drug-info`, `PATCH /api/admin/drug-info/:id`, `POST /api/admin/drug-info/:id/refresh` |
 | Admin portal | `GET /api/admin/stats`, `GET /api/admin/professionals`, `PATCH /api/admin/professionals/:id/verification`, `GET /api/admin/professionals/:id/batches`, `GET`/`PATCH /api/admin/reports` |
 
 Errors are always `{ "error": "message", "details"?: ... }`. Validation errors list `details: [{field, message}]`;
@@ -73,6 +76,37 @@ Add-batch body (matches the form; numbers may be strings):
 ```
 `manufacturer`, `strength`, `form` are optional but are what the Buyer's drug-details screen displays, so consider
 adding those fields to the Add Batch form.
+
+
+## Drug information assistant (Buyer app)
+
+After a scan, the app calls `GET /api/public/drugs/info?batchCode=...` (or `?name=` for typed searches) and gets: a plain-language
+summary, what it's used for, **adult and child dosage**, common/serious side effects, when to get help, who shouldn't take it,
+interactions, pregnancy/breastfeeding, overdose, storage, plus the **verbatim label text** and its source link. A chat-style box can
+call `POST /api/public/drugs/ask` for follow-ups ("can I take it with food?").
+
+**How it works**
+
+1. The scanned batch code is matched to the registered drug name (the registry is how a barcode becomes a drug name).
+2. The name is normalised to the names the FDA uses (`Paracetamol → acetaminophen`, `Salbutamol → albuterol`, `Co-trimoxazole → sulfamethoxazole + trimethoprim`…).
+3. The best matching **official FDA label** is fetched from openFDA (free) and cached in MongoDB for 60 days (`DRUG_INFO_TTL_DAYS`). Each drug is fetched and summarised **once**, not per scan.
+4. Claude rewrites the label in plain language (`ANTHROPIC_API_KEY`). It is told to use only the label text.
+5. **Server-side guardrails**: every statement containing a number (dose, frequency, age, %) is dropped unless that number appears in the label text; every dosage statement must carry a verbatim quote from the label (returned as `quote` so the app can show "From the label: …"). Nothing is ever calculated: no weight-based dose maths.
+6. Follow-up answers use the same rules; emergency wording (overdose, can't breathe, seizure…) skips the AI and returns "call 112 / go to the nearest hospital".
+7. Without an Anthropic key, or if the AI call fails, the endpoint still returns the real label text (`generatedBy: "label-extract"`, `structured: false`), so the feature degrades instead of breaking.
+
+**Why not let the AI answer from its own knowledge?** For dosing, that is exactly how wrong numbers reach a child. Grounding it in the label
+and verifying the numbers is the safer design, and every answer links to its source.
+
+**Limits you should know**
+
+- The source is **US FDA labelling**. It is the best free, structured, official source, but Nigerian (NAFDAC-registered) leaflets can differ in strengths, indications and wording. Every response carries a disclaimer saying the pack leaflet wins.
+  Drugs that are mostly Nigerian-only (local brands, herbal products) will return `available: false`.
+- Many OTC labels give child dosing as an age/weight table; the summary may be partial, so the app should always show the label excerpt and the `children.notice`.
+- Veterinary products are not covered (`VETERINARY_NOT_SUPPORTED`).
+- **Add human review.** The admin endpoints list every cached drug (unreviewed first); a pharmacist can correct any field (`override`, always wins) and mark it reviewed. Corrections survive refreshes. Consider reviewing your top ~100 drugs before launch, and showing a "Reviewed by a pharmacist" badge when `reviewed: true`.
+- Costs: one Claude call per *new* drug, plus one small call per question (limited to 6/min and 40/day per IP). Use `ANTHROPIC_ASK_MODEL` to pick a cheaper model for questions.
+- Language is English only for now.
 
 ## Behaviour you should know about (decisions I made)
 

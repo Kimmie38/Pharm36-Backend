@@ -2,6 +2,7 @@
 //   MONGODB_TEST_URI=mongodb://127.0.0.1:27017/pharm36_test npm test
 // The database name must contain "test" — it is wiped before the run.
 process.env.NODE_ENV = 'test';
+process.env.ANTHROPIC_API_KEY = 'test-key'; // external calls are stubbed in the drug-info subtest
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -151,6 +152,73 @@ test('full pharmacist + consumer + marketplace flow', { skip }, async (t) => {
     assert.equal(r.json.total, 1);
     r = await api('/api/public/reports', { method: 'POST', body: { batchCode: '5012345678901', reason: 'suspected_fake', description: 'pack looked odd' } });
     assert.equal(r.status, 201);
+  });
+
+  await t.test('drug info: scan -> label fetched once -> AI summary grounded + cached -> Q&A -> admin review', async () => {
+    const real = globalThis.fetch;
+    const calls = { fda: 0, claude: 0 };
+    const labelDoc = { set_id: 'set-1', effective_time: '20240115',
+      openfda: { generic_name: ['AMOXICILLIN'], brand_name: ['Amoxil'], substance_name: ['AMOXICILLIN'], route: ['ORAL'], product_type: ['HUMAN PRESCRIPTION DRUG LABEL'] },
+      indications_and_usage: ['Amoxicillin treats bacterial infections.'],
+      dosage_and_administration: ['Adults: 500 mg every 12 hours. Children under 40 kg: 25 mg/kg/day in divided doses.'],
+      adverse_reactions: ['Common: diarrhea, rash, nausea.'] };
+    globalThis.fetch = async (url, opts) => {
+      const u = String(url);
+      if (u.includes('api.fda.gov')) { calls.fda += 1; return { status: 200, ok: true, json: async () => ({ results: [labelDoc] }) }; }
+      if (u.includes('api.anthropic.com')) {
+        calls.claude += 1;
+        const body = JSON.parse(opts.body);
+        const text = body.system.includes('ONE medicine')
+          ? 'The label says adults take 500 mg every 12 hours.'
+          : JSON.stringify({ summary: 'An antibiotic.', uses: ['Bacterial infections'],
+              dosage: { adults: { statements: [{ text: '500 mg every 12 hours', quote: 'Adults: 500 mg every 12 hours.' }] },
+                        children: { statements: [{ text: 'Under 40 kg: 25 mg/kg/day', quote: 'Children under 40 kg: 25 mg/kg/day in divided doses.' }] }, otherNotes: [] },
+              sideEffects: { common: ['Diarrhea', 'Rash', 'Nausea'], serious: [] } });
+        return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text }] }) };
+      }
+      return real(url, opts);
+    };
+    try {
+      let r = await api('/api/public/drugs/info?batchCode=5012345678901');
+      assert.equal(r.status, 200, JSON.stringify(r.json));
+      assert.equal(r.json.available, true);
+      assert.equal(r.json.generatedBy, 'ai-summary');
+      assert.equal(r.json.dosage.adults.statements[0].text, '500 mg every 12 hours');
+      assert.equal(r.json.dosage.children.notice.includes('weight'), true);
+      assert.ok(r.json.labelExcerpts.dosage.includes('500 mg'));
+      assert.equal(r.json.source.setId, 'set-1');
+
+      r = await api('/api/public/drugs/info?name=Amoxicillin');
+      assert.equal(r.json.available, true);
+      assert.deepEqual([calls.fda, calls.claude], [1, 1], 'second lookup is served from the cache');
+
+      r = await api('/api/public/drugs/info?batchCode=NOT-REGISTERED');
+      assert.equal(r.json.reason, 'UNREGISTERED_BATCH');
+
+      r = await api('/api/public/drugs/ask', { method: 'POST', body: { name: 'Amoxicillin', question: 'How often should adults take it?' } });
+      assert.equal(r.status, 200, JSON.stringify(r.json));
+      assert.match(r.json.answer, /500 mg every 12 hours/);
+      const before = calls.claude;
+      r = await api('/api/public/drugs/ask', { method: 'POST', body: { name: 'Amoxicillin', question: 'my child swallowed too many tablets' } });
+      assert.equal(r.json.emergency, true);
+      assert.equal(calls.claude, before, 'emergencies never go to the AI');
+
+      // admin can correct + review an entry; corrections win and survive a refresh
+      const adminToken = (await api('/api/auth/login', { method: 'POST', body: { identifier: 'admin@test.com', password: 'AdminPass1' } })).json.token;
+      const list = (await api('/api/admin/drug-info', { token: adminToken })).json;
+      assert.equal(list.total, 1);
+      const id = list.items[0].id;
+      assert.equal((await api(`/api/admin/drug-info/${id}`, { method: 'PATCH', token: adminToken, body: { override: { summary: 'Reviewed summary.' }, reviewed: true } })).status, 200);
+      r = await api('/api/public/drugs/info?name=Amoxicillin');
+      assert.equal(r.json.summary, 'Reviewed summary.');
+      assert.equal(r.json.reviewed, true);
+      assert.equal(r.json.generatedBy, 'curated');
+      await api(`/api/admin/drug-info/${id}/refresh`, { method: 'POST', token: adminToken });
+      assert.equal((await api('/api/public/drugs/info?name=Amoxicillin')).json.summary, 'Reviewed summary.');
+      assert.equal((await api('/api/admin/drug-info', { token: alice })).status, 403);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 
   await t.test('marketplace: list, browse, buy (partial then rest), stock moves, buyer gets inventory', async () => {

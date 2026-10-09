@@ -58,6 +58,13 @@ test('public verify / search / report validate input', async () => {
   assert.equal((await call('/api/public/reports', { method: 'POST', body: { description: 'bad' } })).status, 400);
 });
 
+test('drug info endpoints validate input', async () => {
+  assert.equal((await call('/api/public/drugs/info')).status, 400);
+  assert.equal((await call('/api/public/drugs/ask', { method: 'POST', body: { name: 'Amoxicillin' } })).status, 400);
+  assert.equal((await call('/api/public/drugs/ask', { method: 'POST', body: { question: 'ok?' } })).status, 400);
+  assert.equal((await call('/api/admin/drug-info')).status, 401);
+});
+
 test('malformed JSON -> 400', async () => {
   const res = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{oops' });
   assert.equal(res.status, 400);
