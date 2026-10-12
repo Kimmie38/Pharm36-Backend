@@ -4,13 +4,13 @@ const DrugCheck = require('../models/DrugCheck');
 const { escapeRegex } = require('../utils/regex');
 const { daysUntil, statusFromDays } = require('../utils/dates');
 
-const OWNER_FIELDS = 'name storeName location state pcnStatus professionalType';
+const OWNER_FIELDS = 'name storeName location state pcnStatus professionalType +deletionInProgress';
 const pharmacyLabel = (o) => [o.storeName || o.name, o.location].filter(Boolean).join(', ');
 
 // Batches registered by professionals who are still in good standing, and not disposed of.
 async function registeredBatches(match) {
   const rows = await Batch.find({ ...match, state: { $in: ['active', 'sold'] } }).populate('owner', OWNER_FIELDS).sort({ createdAt: 1 });
-  return rows.filter((b) => b.owner && b.owner.pcnStatus === 'active');
+  return rows.filter((b) => b.owner && b.owner.pcnStatus === 'active' && !b.owner.deletionInProgress);
 }
 
 function describe(rows, batchCode) {

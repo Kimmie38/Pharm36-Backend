@@ -34,11 +34,14 @@ function message(kind, batch, days) {
 
 async function runExpiryScan() {
   const horizon = addDays(todayUTC(), 366);
-  const cursor = Batch.find({ state: 'active', expiryDate: { $lte: horizon } }).cursor();
-  const userCache = new Map();
+  const cursor = Batch.find({ state: 'active', expiryDate: { $lte: horizon } })
+    .populate('owner', '+deletionInProgress expoPushToken settings')
+    .cursor();
   let created = 0;
 
   for await (const batch of cursor) {
+    const user = batch.owner;
+    if (!user || user.deletionInProgress) continue;
     const { kinds, days } = dueKinds(batch);
     for (const kind of kinds) {
       const [title, body] = message(kind, batch, days);
@@ -49,14 +52,14 @@ async function runExpiryScan() {
         { upsert: true }
       );
       if (!r.upsertedCount) continue;
-      created += 1;
-      let user = userCache.get(String(batch.owner));
-      if (user === undefined) {
-        user = await User.findById(batch.owner).select('expoPushToken settings');
-        userCache.set(String(batch.owner), user);
+      const currentUser = await User.findById(user._id).select('+deletionInProgress expoPushToken settings');
+      if (!currentUser || currentUser.deletionInProgress) {
+        await Notification.deleteOne({ user: user._id, batch: batch._id, kind });
+        continue;
       }
-      if (user?.settings?.pushEnabled && user.expoPushToken) {
-        await sendExpoPush(user.expoPushToken, title, body, { batchId: String(batch._id), kind });
+      created += 1;
+      if (currentUser.settings?.pushEnabled && currentUser.expoPushToken) {
+        await sendExpoPush(currentUser.expoPushToken, title, body, { batchId: String(batch._id), kind });
       }
     }
   }

@@ -8,8 +8,16 @@ const { professionalTypes } = require('../constants/professions');
 const { serializeUser } = require('../services/serializers');
 
 // PCN admins only see pharmacists, VCN admins only see vets, ALL sees both.
-const scopeFor = (admin) =>
-  admin.council === 'PCN' ? { professionalType: 'pharmacist' } : admin.council === 'VCN' ? { professionalType: 'veterinary' } : {};
+function scopeFor(admin) {
+  if (admin?.council === 'PCN') return { professionalType: 'pharmacist' };
+  if (admin?.council === 'VCN') return { professionalType: 'veterinary' };
+  if (admin?.council === 'ALL') return {};
+  throw new AppError(403, 'Administrator account has no valid council scope');
+}
+
+function requireAllScope(admin) {
+  if (admin?.council !== 'ALL') throw new AppError(403, 'Global reports and statistics require an ALL-scope administrator');
+}
 
 async function findScoped(admin, id) {
   const u = await User.findOne({ _id: id, role: 'professional', ...scopeFor(admin) });
@@ -73,8 +81,13 @@ async function listProfessionalBatches(req, res) {
 }
 
 async function listReports(req, res) {
-  const { status, page, limit } = req.valid.query;
+  requireAllScope(req.user);
+  const { status, search, page, limit } = req.valid.query;
   const filter = status ? { status } : {};
+  if (search) {
+    const rx = { $regex: escapeRegex(search), $options: 'i' };
+    filter.$or = [{ drugName: rx }, { batchCode: rx }, { description: rx }, { sellerInfo: rx }, { contact: rx }, { adminNote: rx }];
+  }
   const [items, total] = await Promise.all([
     Report.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
     Report.countDocuments(filter),
@@ -83,6 +96,7 @@ async function listReports(req, res) {
 }
 
 async function updateReport(req, res) {
+  requireAllScope(req.user);
   const r = await Report.findByIdAndUpdate(
     req.valid.params.id,
     { ...req.valid.body, handledBy: req.user._id },
@@ -93,6 +107,7 @@ async function updateReport(req, res) {
 }
 
 async function stats(req, res) {
+  requireAllScope(req.user);
   const scope = { role: 'professional', ...scopeFor(req.user) };
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const [professionals, pending, revoked, openReports, scans, unmatched, batches] = await Promise.all([
@@ -107,4 +122,4 @@ async function stats(req, res) {
   res.json({ professionals, pendingVerification: pending, revoked, openReports, scansLast30Days: scans, unmatchedScansLast30Days: unmatched, activeBatches: batches });
 }
 
-module.exports = { listProfessionals, getProfessional, setVerification, listProfessionalBatches, listReports, updateReport, stats };
+module.exports = { scopeFor, requireAllScope, listProfessionals, getProfessional, setVerification, listProfessionalBatches, listReports, updateReport, stats };

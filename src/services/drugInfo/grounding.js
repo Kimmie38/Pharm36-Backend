@@ -1,6 +1,5 @@
-// Anti-hallucination guards. The AI may only restate what is in the label text we gave it.
-// Any statement containing a number (dose, frequency, age, percentage...) that does not appear in the
-// source text is dropped, and dosage statements must carry a verbatim quote from the label.
+// Fail-closed evidence guards for AI-generated medicine information.
+// Only text that can be located as an excerpt in the relevant official-label text is exposed.
 
 const normText = (s) =>
   String(s ?? '')
@@ -38,9 +37,10 @@ function groundedList(arr, source, { max = 12, maxLen = 400 } = {}) {
   if (!Array.isArray(arr)) return [];
   const out = [];
   for (const raw of arr) {
-    const t = cleanItem(raw);
-    if (t.length < 3 || t.length > maxLen || !source.numbersGrounded(t)) continue;
-    if (!out.includes(t)) out.push(t);
+    const excerpt = cleanItem(raw);
+    if (excerpt.length < 12 || excerpt.length > maxLen) continue;
+    if (!source.hasQuote(excerpt) || !source.numbersGrounded(excerpt)) continue;
+    if (!out.includes(excerpt)) out.push(excerpt);
     if (out.length >= max) break;
   }
   return out;
@@ -52,10 +52,11 @@ function groundedStatements(arr, source, { max = 8 } = {}) {
   for (const raw of arr) {
     const text = cleanItem(raw?.text);
     const quote = cleanItem(raw?.quote);
-    if (text.length < 3 || text.length > 500) continue;
-    if (!source.numbersGrounded(text)) continue;
-    if (!source.hasQuote(quote)) continue; // dosing must be traceable to the label
-    out.push({ text, quote: quote.slice(0, 400) });
+    if (quote.length < 12 || quote.length > 400) continue;
+    if (!source.hasQuote(quote) || !source.numbersGrounded(quote)) continue;
+    // A generated paraphrase is never displayed; the statement itself must be the verified excerpt.
+    if (normText(text) !== normText(quote)) continue;
+    out.push({ text: quote, quote });
     if (out.length >= max) break;
   }
   return out;

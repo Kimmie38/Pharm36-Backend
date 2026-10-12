@@ -1,24 +1,44 @@
-// npm run seed:admin  -> creates (or resets the password of) the council admin account from .env
-const env = require('../src/config/env');
+'use strict';
+
+// Manual, one-time command. It is never run automatically during API startup.
+require('../src/config/env'); // loads ignored .env.local first, then .env
 const mongoose = require('mongoose');
 const { connectDB } = require('../src/config/db');
 const User = require('../src/models/User');
+const { AdminProvisioningError, parseFlags, provisionAdmin } = require('../src/services/adminProvisioning');
 
-(async () => {
-  await connectDB();
-  const email = (process.env.ADMIN_EMAIL || 'admin@pharm36.app').toLowerCase();
-  const password = process.env.ADMIN_PASSWORD;
-  if (!password || password.length < 8) throw new Error('Set ADMIN_PASSWORD (min 8 chars) in .env');
-  const council = process.env.ADMIN_COUNCIL || 'ALL';
-  const passwordHash = await User.hashPassword(password);
-  const existing = await User.findOne({ email });
-  if (existing) {
-    existing.passwordHash = passwordHash; existing.role = 'admin'; existing.council = council; existing.tokenVersion += 1;
-    await existing.save();
-    console.log(`Updated admin ${email} (council: ${council})`);
-  } else {
-    await User.create({ role: 'admin', name: 'Council Admin', email, passwordHash, council });
-    console.log(`Created admin ${email} (council: ${council})`);
+async function main(args = process.argv.slice(2)) {
+  const flags = parseFlags(args);
+  try {
+    await connectDB();
+    const result = await provisionAdmin({
+      User,
+      email: process.env.ADMIN_EMAIL,
+      password: process.env.ADMIN_PASSWORD,
+      council: process.env.ADMIN_COUNCIL,
+      ...flags,
+    });
+    const scope = result.council || 'unchanged';
+    const message = result.action === 'created'
+      ? 'Admin account created'
+      : result.action === 'updated'
+        ? 'Existing admin account updated'
+        : 'Existing admin account left unchanged';
+    console.log(`[seed:admin] ${message} (council scope: ${scope}).`);
+    return result;
+  } finally {
+    await mongoose.disconnect().catch(() => {});
   }
-  await mongoose.disconnect();
-})().catch((e) => { console.error(e.message); process.exit(1); });
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    const message = error instanceof AdminProvisioningError
+      ? error.message
+      : 'Database/seed operation failed; details were withheld to avoid exposing environment values.';
+    console.error(`[seed:admin] ${message}`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { main };

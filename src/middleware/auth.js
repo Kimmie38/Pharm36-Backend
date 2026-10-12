@@ -17,8 +17,9 @@ async function authenticate(req, _res, next) {
     } catch {
       throw new AppError(401, 'Invalid or expired token');
     }
-    const user = await User.findById(payload.sub);
+    const user = await User.findById(payload.sub).select('+deletionInProgress');
     if (!user || (user.tokenVersion || 0) !== payload.tv) throw new AppError(401, 'Session is no longer valid, please log in again');
+    if (user.deletionInProgress) throw new AppError(423, 'This account is being permanently deleted');
     req.user = user;
     next();
   } catch (e) {
@@ -29,10 +30,17 @@ async function authenticate(req, _res, next) {
 const requireRole = (role) => (req, _res, next) =>
   req.user && req.user.role === role ? next() : next(new AppError(403, 'You do not have access to this resource'));
 
-// Revoked professionals can still log in and read, but cannot create/modify anything.
-const requireActive = (req, _res, next) =>
-  req.user.role === 'admin' || req.user.pcnStatus === 'active'
-    ? next()
-    : next(new AppError(403, 'Your access has been revoked by your regulatory council. Contact them to restore it.'));
+// Re-read the account before writes so a request authenticated just before a deletion lock is rejected.
+const requireActive = async (req, _res, next) => {
+  try {
+    const user = await User.findById(req.user._id).select('+deletionInProgress');
+    if (!user || user.deletionInProgress) throw new AppError(423, 'This account is being permanently deleted');
+    req.user = user;
+    if (user.role === 'admin' || user.pcnStatus === 'active') return next();
+    throw new AppError(403, 'Your access has been revoked by your regulatory council. Contact them to restore it.');
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports = { signToken, authenticate, requireRole, requireActive };

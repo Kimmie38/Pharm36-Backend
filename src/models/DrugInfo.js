@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const jsonPlugin = require('./plugins');
 
-// Cache of "what is this drug / how is it used" so each drug is fetched + summarised once, not on every scan.
+// Cache of official drug-label material so each drug is fetched and excerpted once, not on every scan.
 const drugInfoSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true }, // e.g. "acetaminophen|oral"
@@ -10,7 +10,7 @@ const drugInfoSchema = new mongoose.Schema(
     label: { type: mongoose.Schema.Types.Mixed }, // setId, effectiveDate, brandNames, manufacturer, url...
     sections: { type: mongoose.Schema.Types.Mixed }, // the (capped) label text the AI saw; also used for Q&A
     info: { type: mongoose.Schema.Types.Mixed }, // structured, grounded summary (may be empty if AI unavailable)
-    generatedBy: { type: String, enum: ['ai-summary', 'label-extract', 'curated'] },
+    generatedBy: { type: String, enum: ['ai-summary', 'ai-label-excerpts', 'label-extract', 'curated'] },
     model: String,
     // human oversight: admins can correct fields (override) and mark an entry as reviewed
     override: { type: mongoose.Schema.Types.Mixed },

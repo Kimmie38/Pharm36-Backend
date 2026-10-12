@@ -22,11 +22,11 @@ const notifList = z.object({ unread: z.enum(['true', 'false']).default('false').
 router.use(authenticate);
 router.get('/', c.getMe);
 router.patch('/', requireActive, validate({ body: update }), c.updateMe);
-router.post('/change-password', validate({ body: changePw }), c.changePassword);
-router.put('/push-token', validate({ body: pushToken }), c.setPushToken);
+router.post('/change-password', requireActive, validate({ body: changePw }), c.changePassword);
+router.put('/push-token', requireActive, validate({ body: pushToken }), c.setPushToken);
 
 router.get('/notifications', requireRole('professional'), validate({ query: notifList }), c.listNotifications);
-router.post('/notifications/read-all', requireRole('professional'), c.markAllRead);
-router.patch('/notifications/:id/read', requireRole('professional'), validate({ params: z.object({ id: objectId }) }), c.markRead);
+router.post('/notifications/read-all', requireRole('professional'), requireActive, c.markAllRead);
+router.patch('/notifications/:id/read', requireRole('professional'), requireActive, validate({ params: z.object({ id: objectId }) }), c.markRead);
 
 module.exports = router;

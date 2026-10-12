@@ -3,7 +3,12 @@ const AppError = require('../utils/AppError');
 const { escapeRegex } = require('../utils/regex');
 const { loadEntry } = require('../services/drugInfo');
 
+function requireAllScope(admin) {
+  if (admin?.council !== 'ALL') throw new AppError(403, 'Global drug-label review requires an ALL-scope administrator');
+}
+
 async function list(req, res) {
+  requireAllScope(req.user);
   const { search, reviewed, status, page, limit } = req.valid.query;
   const filter = {};
   if (reviewed !== undefined) filter.reviewed = reviewed;
@@ -17,6 +22,7 @@ async function list(req, res) {
 }
 
 async function getOne(req, res) {
+  requireAllScope(req.user);
   const doc = await DrugInfo.findById(req.valid.params.id);
   if (!doc) throw new AppError(404, 'Entry not found');
   res.json({ entry: doc });
@@ -24,22 +30,29 @@ async function getOne(req, res) {
 
 // PATCH: correct fields (override) and/or mark reviewed. `override: null` clears all corrections.
 async function update(req, res) {
+  requireAllScope(req.user);
   const { override, reviewed } = req.valid.body;
+  if (override !== undefined && reviewed === true) throw new AppError(400, 'Save a correction first, then mark it reviewed in a separate action');
   const doc = await DrugInfo.findById(req.valid.params.id);
   if (!doc) throw new AppError(404, 'Entry not found');
-  if (override !== undefined) doc.override = override === null ? undefined : { ...(doc.override || {}), ...override };
-  if (reviewed !== undefined) {
+  if (override !== undefined) {
+    doc.override = override === null ? undefined : { ...(doc.override || {}), ...override };
+    doc.reviewed = false;
+    doc.reviewedBy = null;
+    doc.reviewedAt = null;
+  } else if (reviewed !== undefined) {
     doc.reviewed = reviewed;
-    doc.reviewedBy = reviewed ? req.user._id : undefined;
-    doc.reviewedAt = reviewed ? new Date() : undefined;
+    doc.reviewedBy = reviewed ? req.user._id : null;
+    doc.reviewedAt = reviewed ? new Date() : null;
   }
   doc.markModified('override');
   await doc.save();
   res.json({ entry: doc });
 }
 
-// Re-fetch the label and rebuild the summary (human corrections and review state are kept).
+// Re-fetch the label and rebuild the excerpts (keep corrections but reset review until they are checked against the refreshed source).
 async function refresh(req, res) {
+  requireAllScope(req.user);
   const doc = await DrugInfo.findById(req.valid.params.id);
   if (!doc) throw new AppError(404, 'Entry not found');
   const name = doc.ingredients.join('/');

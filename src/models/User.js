@@ -31,6 +31,7 @@ const userSchema = new mongoose.Schema(
     // admin accounts: which council they act for
     council: { type: String, enum: ['PCN', 'VCN', 'ALL'] },
     tokenVersion: { type: Number, default: 0 },
+    deletionInProgress: { type: Boolean, default: false, select: false },
     resetTokenHash: { type: String, select: false },
     resetTokenExpires: { type: Date, select: false },
     lastLoginAt: Date,
@@ -44,6 +45,6 @@ userSchema.methods.comparePassword = function (plain) {
 
 userSchema.statics.hashPassword = (plain) => bcrypt.hash(plain, 12);
 
-jsonPlugin(userSchema, ['passwordHash', 'resetTokenHash', 'resetTokenExpires', 'tokenVersion', 'expoPushToken']);
+jsonPlugin(userSchema, ['passwordHash', 'resetTokenHash', 'resetTokenExpires', 'tokenVersion', 'expoPushToken', 'deletionInProgress']);
 
 module.exports = mongoose.model('User', userSchema);

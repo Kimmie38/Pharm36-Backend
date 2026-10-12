@@ -8,6 +8,13 @@ const { canAddCategory } = require('../src/constants/permissions');
 const { dueKinds } = require('../src/jobs/expiryScan');
 const { levelFor } = require('../src/services/sales');
 const { escapeRegex } = require('../src/utils/regex');
+const { redactText } = require('../src/utils/redactText');
+const AIInteraction = require('../src/models/AIInteraction');
+const DrugInfo = require('../src/models/DrugInfo');
+const { scopeFor, requireAllScope } = require('../src/controllers/admin.controller');
+const { deleteSale, deleteOrder } = require('../src/controllers/adminOperations.controller');
+const { update: updateDrugInfo } = require('../src/controllers/adminDrugInfo.controller');
+const { isTransactionUnsupported } = require('../src/services/adminInvariant');
 
 test('expiry status buckets match the app (1 month / 2 weeks / expired)', () => {
   assert.equal(statusFromDays(-1), 'expired');
@@ -80,4 +87,47 @@ test('sales levels reproduce the demo data tiers', () => {
 
 test('regex escaping prevents regex injection in searches', () => {
   assert.equal(escapeRegex('a.*b(c)'), 'a\\.\\*b\\(c\\)');
+});
+
+test('administrator council scopes are explicit and fail closed', () => {
+  assert.deepEqual(scopeFor({ council: 'PCN' }), { professionalType: 'pharmacist' });
+  assert.deepEqual(scopeFor({ council: 'VCN' }), { professionalType: 'veterinary' });
+  assert.deepEqual(scopeFor({ council: 'ALL' }), {});
+  assert.throws(() => scopeFor({ council: 'OTHER' }), /no valid council scope/);
+  assert.throws(() => scopeFor({}), /no valid council scope/);
+  assert.doesNotThrow(() => requireAllScope({ council: 'ALL' }));
+  assert.throws(() => requireAllScope({ council: 'PCN' }), /ALL-scope administrator/);
+});
+
+test('permanent sale and order deletion is restricted to ALL-scope admins', async () => {
+  const req = { user: { council: 'PCN' }, valid: { body: { confirmation: 'DELETE' }, params: { id: '000000000000000000000001' } } };
+  await assert.rejects(deleteSale(req, {}), /requires an ALL-scope administrator/);
+  await assert.rejects(deleteOrder(req, {}), /requires an ALL-scope administrator/);
+});
+
+test('anonymous AI history has the 90-day TTL field and no account or request identity paths', () => {
+  const fields = AIInteraction.schema.paths;
+  assert.ok(fields.drugKey && fields.drugName && fields.question && fields.answer && fields.responseStatus && fields.model && fields.expiresAt);
+  for (const field of ['user', 'userId', 'accountId', 'email', 'phone', 'ip', 'ipAddress', 'userAgent']) {
+    assert.equal(fields[field], undefined, `AI history must not store ${field}`);
+  }
+  const ttl = AIInteraction.schema.indexes().find(([keys]) => keys.expiresAt === 1);
+  assert.equal(ttl?.[1]?.expireAfterSeconds, 0, 'MongoDB TTL is driven directly by expiresAt');
+  assert.equal(AIInteraction.schema.path('updatedAt'), undefined, 'updatedAt is not collected for these append-only records');
+});
+
+test('drug-label correction approval is a separate ALL-admin action and excerpt provenance is schema-valid', async () => {
+  assert.ok(DrugInfo.schema.path('generatedBy').enumValues.includes('ai-label-excerpts'));
+  const req = { user: { council: 'ALL', _id: '000000000000000000000001' }, valid: { params: { id: '000000000000000000000002' }, body: { override: { summary: 'correction' }, reviewed: true } } };
+  await assert.rejects(updateDrugInfo(req, {}), /Save a correction first/);
+});
+
+test('AI history redacts email and phone patterns before storage', () => {
+  assert.equal(redactText('Email alex@example.com; phone +1 (415) 555-0123.'), 'Email [redacted email]; phone [redacted phone].');
+});
+
+test('admin invariant reports unsupported standalone-Mongo transactions', () => {
+  assert.equal(isTransactionUnsupported({ message: 'Transaction numbers are only allowed on a replica set member or mongos' }), true);
+  assert.equal(isTransactionUnsupported({ name: 'MongoServerError', message: 'duplicate key' }), false);
+  assert.equal(isTransactionUnsupported({ name: 'MongoServerError', message: 'The operation completed' }), false);
 });

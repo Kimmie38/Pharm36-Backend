@@ -1,11 +1,16 @@
-require('dotenv').config({ path: ['.env.local', '.env'] });
+const path = require('node:path');
+const backendRoot = path.resolve(__dirname, '../..');
+require('dotenv').config({
+  path: [path.join(backendRoot, '.env.local'), path.join(backendRoot, '.env')],
+  override: false,
+});
 
 const bool = (v, d) => (v === undefined ? d : String(v).toLowerCase() === 'true');
 const nodeEnv = process.env.NODE_ENV || 'development';
 
 if (!process.env.JWT_SECRET) {
   if (nodeEnv === 'test') process.env.JWT_SECRET = 'test-secret';
-  else throw new Error('JWT_SECRET is not set. Copy .env.example to .env and fill it in.');
+  else throw new Error('JWT_SECRET is not set. Copy .env.example to .env.local and fill it in, or set it in the host environment.');
 }
 
 module.exports = {
