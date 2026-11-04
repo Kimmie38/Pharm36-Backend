@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed:demo": "node scripts/seed-demo.js",
+    "admin:create": "node scripts/create-admin.js",
     "scan:expiry": "node scripts/run-expiry-scan.js",
     "test": "node --test"
   },
