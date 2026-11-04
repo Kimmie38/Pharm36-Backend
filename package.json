@@ -7,7 +7,6 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "seed:admin": "node scripts/seed-admin.js",
     "seed:demo": "node scripts/seed-demo.js",
     "scan:expiry": "node scripts/run-expiry-scan.js",
     "test": "node --test"

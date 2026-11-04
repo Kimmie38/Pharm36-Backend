@@ -10,21 +10,12 @@ npm install
 [ -f .env.local ] || cp .env.example .env.local  # set a strong JWT_SECRET and MONGODB_URI
 docker compose up -d            # optional: local MongoDB for ordinary development
 npm run seed:demo               # optional: the same demo data the app shows today
-npm run seed:admin              # optional: create the admin from ADMIN_* in .env.local
 npm run dev                     # http://localhost:4000/health
 npm test                        # unit + HTTP tests (no DB needed)
 MONGODB_TEST_URI=mongodb://127.0.0.1:27017/pharm36_test npm test    # + full end-to-end suite
 ```
 
 The multi-collection account-deletion cascade requires a transaction-capable MongoDB replica set or sharded deployment; a standalone local MongoDB is not sufficient. Use a local replica-set configuration or MongoDB Atlas to exercise transactional deletion. The API fails closed without partial record deletion when transactions are unavailable.
-
-## Admin provisioning
-
-The backend loads ignored `.env.local` first and then `.env`; environment variables supplied by the process/host take precedence. Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_COUNCIL` in `.env.local` for local use, or in the hosting provider's protected environment settings. Use a unique, strong password. Real credentials must not be placed in `.env.example` or committed.
-
-`npm run seed:admin` is an explicit one-time operation; it is never run at API startup. It creates a new admin only when the configured email is unused, and hashes the password with the existing password helper. If the email already belongs to an admin, the default command makes no changes. If it belongs to a professional or other non-admin account, the command refuses to elevate it. For an existing admin, use `npm run seed:admin -- --reset-password` to deliberately change its password (this increments `tokenVersion`, invalidating existing sessions), and/or `npm run seed:admin -- --set-council` to deliberately change its scope. These flags never create or elevate an account. `ADMIN_COUNCIL` must be set explicitly to `PCN`, `VCN`, or `ALL`; `ALL` grants access across councils.
-
-For a live deployment, set the credentials in the host's protected environment and run the seed command once against the intended database only after confirming the email, database target, and council scope. This build does not run the seed command or modify a live database.
 
 Demo login after `seed:demo`: `adaeze.okonkwo@pharm36.app` / `Demo12345`.
 Try scanning `5012345678901` or `5019988771234` in the Buyer app.
@@ -188,6 +179,6 @@ src/
   middleware/    auth (JWT, roles, active check), validate (zod), rateLimit, errorHandler
   services/      serializers, sales, notify (Expo push), drugInfo, aiSettings, adminDeletion, adminInvariant
   jobs/          expiryScan.js (daily cron)
-scripts/         seed-admin, seed-demo, run-expiry-scan
+scripts/         seed-demo, run-expiry-scan
 test/            unit, http (no DB), integration (needs MongoDB)
 ```
