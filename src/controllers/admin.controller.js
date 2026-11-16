@@ -7,7 +7,7 @@ const { escapeRegex } = require('../utils/regex');
 const { professionalTypes } = require('../constants/professions');
 const { serializeUser } = require('../services/serializers');
 
-// PCN admins only see pharmacists, VCN admins only see vets, ALL sees both.
+// PCN admin only see pharmacists, VCN admins only see vets, ALL sees both.
 function scopeFor(admin) {
   if (admin?.council === 'PCN') return { professionalType: 'pharmacist' };
   if (admin?.council === 'VCN') return { professionalType: 'veterinary' };
