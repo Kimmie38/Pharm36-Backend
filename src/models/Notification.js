@@ -5,7 +5,7 @@ const notificationSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     batch: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch' },
-    kind: { type: String, enum: ['reminder', 'expiring_1m', 'expiring_2w', 'expired', 'system'], required: true },
+    kind: { type: String, enum: ['reminder', 'expiring_1m', 'expiring_2w', 'expired', 'recall', 'system'], required: true },
     title: { type: String, required: true },
     body: { type: String, required: true },
     read: { type: Boolean, default: false },

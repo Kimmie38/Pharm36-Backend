@@ -1,6 +1,10 @@
 const Batch = require('../models/Batch');
 const Report = require('../models/Report');
 const DrugCheck = require('../models/DrugCheck');
+const Recall = require('../models/Recall');
+const User = require('../models/User');
+const AppError = require('../utils/AppError');
+const NAFDAC_RX = /^[A-Z0-9]{2}-\d{3,6}$/;
 const { escapeRegex } = require('../utils/regex');
 const { daysUntil, statusFromDays } = require('../utils/dates');
 
@@ -13,16 +17,25 @@ async function registeredBatches(match) {
   return rows.filter((b) => b.owner && b.owner.pcnStatus === 'active' && !b.owner.deletionInProgress);
 }
 
-function describe(rows, batchCode) {
+function describe(rows, batchCode, recall) {
   const primary = rows[0];
   const days = daysUntil(primary.expiryDate);
   const status = statusFromDays(days);
   const expiryDates = new Set(rows.map((r) => r.expiryDate.toISOString().slice(0, 10)));
   const inconsistent = expiryDates.size > 1; // same batch code, different expiry dates => suspicious
-  const safeToUse = days > 30 && !inconsistent;
+  const recalled = !!recall;
+  const nafdacNo = rows.map((r) => r.nafdacNo).find(Boolean) || null;
+  const flags = [];
+  if (!nafdacNo) flags.push('no_nafdac_number');
+  else if (!NAFDAC_RX.test(nafdacNo)) flags.push('nafdac_format_invalid');
+  if (inconsistent) flags.push('inconsistent_records');
+  if (recalled) flags.push('recalled');
+  const safeToUse = days > 30 && !inconsistent && !recalled;
 
   let summary;
-  if (inconsistent) {
+  if (recalled) {
+    summary = `RECALLED: this batch has been recalled by the regulator. Do not use it. Reason: ${recall.reason}`;
+  } else if (inconsistent) {
     summary = 'Warning: pharmacists have registered this batch code with different expiry dates. Do not use it until you have checked with the pharmacist or the council.';
   } else if (days < 0) {
     summary = `This batch matches a registered record but EXPIRED ${Math.abs(days)} day(s) ago. Do not use it.`;
@@ -38,6 +51,10 @@ function describe(rows, batchCode) {
     safeToUse,
     expiryStatus: status,
     inconsistentRecords: inconsistent,
+    recalled,
+    recall: recalled ? { reason: recall.reason, severity: recall.severity, nafdacRef: recall.nafdacRef || null, issuedAt: recall.createdAt } : null,
+    nafdacNo,
+    flags,
     drug: {
       name: primary.drugName,
       strength: primary.strength || null,
@@ -58,9 +75,11 @@ function describe(rows, batchCode) {
 // GET /api/public/drugs/verify?batchCode=...   (scan result)
 async function verify(req, res) {
   const { batchCode } = req.valid.query;
-  const rows = await registeredBatches({ batchCode });
+  const [rows, recall] = await Promise.all([registeredBatches({ batchCode }), Recall.findOne({ batchCode, active: true })]);
   const result = rows.length
-    ? describe(rows, batchCode)
+    ? describe(rows, batchCode, recall)
+    : recall
+    ? { found: false, verified: false, safeToUse: false, recalled: true, recall: { reason: recall.reason, severity: recall.severity, nafdacRef: recall.nafdacRef || null, issuedAt: recall.createdAt }, batchCode, flags: ['recalled'], summary: `RECALLED: this batch has been recalled by the regulator. Do not use it. Reason: ${recall.reason}` }
     : {
         found: false,
         verified: false,
@@ -104,4 +123,25 @@ async function report(req, res) {
   res.status(201).json({ id: String(r._id), message: 'Thank you. Your report has been sent to the regulator for review.' });
 }
 
-module.exports = { verify, search, report };
+// GET /api/public/pharmacies/:id  (target of the QR sticker)
+async function pharmacy(req, res) {
+  const u = await User.findOne({ _id: req.valid.params.id, role: 'professional' }).select('name storeName location state professionalType pcnStatus verificationStatus');
+  if (!u) throw new AppError(404, 'Pharmacy not found');
+  res.set('Cache-Control', 'no-store');
+  res.json(pharmacyView(u));
+}
+
+function pharmacyView(u) {
+  const council = u.professionalType === 'veterinary' ? 'VCN' : 'PCN';
+  return {
+    id: String(u._id),
+    name: u.storeName || u.name,
+    location: u.location || null,
+    state: u.state || null,
+    council,
+    registered: u.pcnStatus === 'active',
+    licenceVerified: u.verificationStatus === 'verified',
+  };
+}
+
+module.exports = { verify, search, report, pharmacy, pharmacyView };

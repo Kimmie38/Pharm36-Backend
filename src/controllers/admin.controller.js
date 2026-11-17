@@ -5,6 +5,7 @@ const DrugCheck = require('../models/DrugCheck');
 const AppError = require('../utils/AppError');
 const { escapeRegex } = require('../utils/regex');
 const { professionalTypes } = require('../constants/professions');
+const Notification = require('../models/Notification');
 const { serializeUser } = require('../services/serializers');
 
 // PCN admin only see pharmacists, VCN admins only see vets, ALL sees both.
@@ -65,7 +66,16 @@ async function setVerification(req, res) {
   if (b.pcnStatus) u.pcnStatus = b.pcnStatus;
   if (b.licenseNo !== undefined) u.licenseNo = b.licenseNo;
   if (b.verificationStatus === 'rejected' && !b.pcnStatus) u.pcnStatus = 'revoked';
+  const statusChanged = b.verificationStatus && b.verificationStatus !== u.verificationStatus;
   await u.save();
+  if (statusChanged && b.verificationStatus !== 'pending') {
+    const ok = b.verificationStatus === 'verified';
+    await Notification.create({
+      user: u._id, kind: 'system',
+      title: ok ? 'Licence verified' : 'Licence could not be verified',
+      body: ok ? 'Your council has verified your licence. Marketplace and confirmed sections are now open.' : 'Your council could not verify your licence. Contact them to resolve this.',
+    }).catch(() => {});
+  }
   res.json({ professional: serializeUser(u) });
 }
 

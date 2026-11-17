@@ -182,3 +182,11 @@ src/
 scripts/         seed-demo, run-expiry-scan
 test/            unit, http (no DB), integration (needs MongoDB)
 ```
+
+## New in this update
+
+- `POST /api/batches` accepts `clientId` (idempotent offline sync) and `nafdacNo`.
+- Recalls: `GET/POST /api/admin/recalls`, `POST /api/admin/recalls/:id/lift` (ALL-scope admins). Creating one alerts every professional holding the batch and makes `GET /api/public/drugs/verify` return `recalled: true`, `safeToUse: false`.
+- `verify` now returns `nafdacNo` and `flags` (`no_nafdac_number`, `nafdac_format_invalid`, `inconsistent_records`, `recalled`). The NAFDAC check is a format check only; there is no live NAFDAC register lookup yet.
+- Pharmacy QR page: `GET /p/:id` (HTML) and `GET /api/public/pharmacies/:id` (JSON).
+- Licence queue: use `GET /api/admin/professionals?verificationStatus=pending`; approving or rejecting now notifies the professional. Set `REQUIRE_VERIFIED_FOR_MARKETPLACE=true` to lock marketplace trading until verified. Set `PUBLIC_BASE_URL` to your API's public address.

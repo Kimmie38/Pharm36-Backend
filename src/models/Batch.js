@@ -20,6 +20,9 @@ const batchSchema = new mongoose.Schema(
     state: { type: String, enum: ['active', 'sold', 'disposed'], default: 'active' },
     closedAt: Date,
     disposalReason: String,
+    nafdacNo: { type: String, trim: true, uppercase: true },
+    // client-generated id so an offline app can safely retry a create without making duplicates
+    clientId: { type: String, trim: true },
     source: { type: String, enum: ['manual', 'marketplace'], default: 'manual' },
   },
   { timestamps: true }
@@ -29,6 +32,10 @@ const batchSchema = new mongoose.Schema(
 batchSchema.index(
   { owner: 1, batchCode: 1 },
   { unique: true, partialFilterExpression: { state: 'active' } }
+);
+batchSchema.index(
+  { owner: 1, clientId: 1 },
+  { unique: true, partialFilterExpression: { clientId: { $type: 'string' } } }
 );
 batchSchema.index({ batchCode: 1, state: 1 }); // public verification lookups
 batchSchema.index({ drugName: 1, state: 1 }); // public name search

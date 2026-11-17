@@ -30,6 +30,8 @@ module.exports = {
   anthropicAskModel: process.env.ANTHROPIC_ASK_MODEL || 'claude-haiku-4-5-20251001', // answers follow-up questions
   openFdaApiKey: process.env.OPENFDA_API_KEY || '',
   drugInfoTtlDays: Number(process.env.DRUG_INFO_TTL_DAYS) || 60,
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || 'https://pharm36-backend.onrender.com').replace(/\/+$/, ''),
+  requireVerifiedForMarketplace: bool(process.env.REQUIRE_VERIFIED_FOR_MARKETPLACE, false),
   salesLevelHigh: Number(process.env.SALES_LEVEL_HIGH) || 8000,
   salesLevelMedium: Number(process.env.SALES_LEVEL_MEDIUM) || 3000,
 };

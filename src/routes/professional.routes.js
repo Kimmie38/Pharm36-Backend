@@ -7,7 +7,14 @@ const dash = require('../controllers/dashboard.controller');
 const market = require('../controllers/marketplace.controller');
 const { z, objectId, isoDate, num, int, reminder, category, pagination } = require('../utils/schemas');
 
+const env = require('../config/env');
+const AppError = require('../utils/AppError');
 router.use(authenticate, requireRole('professional'));
+// Optional: only licence-verified professionals may trade (REQUIRE_VERIFIED_FOR_MARKETPLACE=true)
+const requireVerified = (req, _res, next) =>
+  !env.requireVerifiedForMarketplace || req.user.verificationStatus === 'verified'
+    ? next()
+    : next(new AppError(403, 'Marketplace access opens once your council has verified your licence.', { code: 'NOT_VERIFIED' }));
 
 const idParam = z.object({ id: objectId });
 const statusEnum = z.enum(['ok', 'expiring_1m', 'expiring_2w', 'expired']);
@@ -38,6 +45,8 @@ const createBatch = z.object({
   unitPrice: num(0).optional(),
   price: num(0).optional(),
   reminder: reminder.optional(),
+  nafdacNo: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2}-\d{3,6}$/, 'NAFDAC number looks like A4-1234 or 04-1234').optional().or(z.literal('').transform(() => undefined)),
+  clientId: z.string().trim().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/, 'Invalid client id').optional(),
 }).transform(({ price, ...rest }) => ({ ...rest, unitPrice: rest.unitPrice ?? price ?? 0 }));
 const patchBatch = z.object({
   drugName: z.string().trim().min(2).max(150).optional(),
@@ -81,11 +90,11 @@ const buyBody = z.object({ quantity: int(1).optional() });
 const ordersQuery = z.object({ role: z.enum(['buyer', 'seller']).default('buyer'), ...pagination });
 
 router.get('/marketplace/listings', validate({ query: browseQuery }), market.browse);
-router.post('/marketplace/listings', requireActive, validate({ body: offerBody }), market.createOffer);
-router.post('/marketplace/requests', requireActive, validate({ body: requestBody }), market.createRequest);
+router.post('/marketplace/listings', requireActive, requireVerified, validate({ body: offerBody }), market.createOffer);
+router.post('/marketplace/requests', requireActive, requireVerified, validate({ body: requestBody }), market.createRequest);
 router.patch('/marketplace/listings/:id', requireActive, validate({ params: idParam, body: patchListing }), market.updateListing);
 router.delete('/marketplace/listings/:id', requireActive, validate({ params: idParam }), market.cancelListing);
-router.post('/marketplace/listings/:id/buy', requireActive, validate({ params: idParam, body: buyBody }), market.buy);
+router.post('/marketplace/listings/:id/buy', requireActive, requireVerified, validate({ params: idParam, body: buyBody }), market.buy);
 router.get('/marketplace/orders', validate({ query: ordersQuery }), market.myOrders);
 
 module.exports = router;

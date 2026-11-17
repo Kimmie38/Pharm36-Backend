@@ -4,7 +4,7 @@ const validate = require('../middleware/validate');
 const limits = require('../middleware/rateLimit');
 const c = require('../controllers/public.controller');
 const di = require('../controllers/drugInfo.controller');
-const { z } = require('../utils/schemas');
+const { z, objectId } = require('../utils/schemas');
 
 const verifyQ = z.object({ batchCode: z.string().trim().min(3).max(64) });
 const searchQ = z.object({ q: z.string().trim().min(2).max(100), limit: z.coerce.number().int().min(1).max(25).default(10) });
@@ -30,6 +30,7 @@ router.get('/drugs/info', limits.publicInfo, validate({ query: infoQ }), di.info
 router.post('/drugs/ask', limits.publicAskMinute, limits.publicAskDay, validate({ body: askB }), di.askQuestion);
 router.get('/drugs/verify', limits.publicLookup, validate({ query: verifyQ }), c.verify);
 router.get('/drugs/search', limits.publicLookup, validate({ query: searchQ }), c.search);
+router.get('/pharmacies/:id', limits.publicLookup, validate({ params: z.object({ id: objectId }) }), c.pharmacy);
 router.post('/reports', limits.publicReport, validate({ body: reportBody }), c.report);
 
 module.exports = router;

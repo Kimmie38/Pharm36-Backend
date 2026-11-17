@@ -6,6 +6,7 @@ const c = require('../controllers/admin.controller');
 const op = require('../controllers/adminOperations.controller');
 const ai = require('../controllers/adminAi.controller');
 const dc = require('../controllers/adminDrugInfo.controller');
+const recall = require('../controllers/adminRecall.controller');
 const { z, objectId, isoDate, phone, email, state, reminder, category, num, int, pagination } = require('../utils/schemas');
 
 router.use(authenticate, requireRole('admin'));
@@ -114,6 +115,17 @@ router.delete('/ai-history/:id', validate({ params: idParam, body: confirmedDele
 router.get('/ai-settings', ai.getSettings);
 router.patch('/ai-settings', validate({ body: aiSettingsPatch }), ai.patchSettings);
 
+const recallBody = z.object({
+  batchCode: z.string().trim().min(3).max(64),
+  drugName: z.string().trim().max(150).optional(),
+  reason: z.string().trim().min(5, 'Give a reason for the recall').max(1000),
+  nafdacRef: z.string().trim().max(60).optional(),
+  severity: z.enum(['class1', 'class2', 'class3']).default('class2'),
+});
+const recallListQ = z.object({ active: z.enum(['true', 'false']).transform((v) => v === 'true').optional(), ...pagination });
+router.get('/recalls', validate({ query: recallListQ }), recall.list);
+router.post('/recalls', validate({ body: recallBody }), recall.create);
+router.post('/recalls/:id/lift', validate({ params: idParam }), recall.lift);
 router.get('/stats', c.stats);
 router.get('/users', validate({ query: usersQ }), op.listUsers);
 router.get('/users/:id/delete-preview', validate({ params: idParam }), op.previewUserDelete);

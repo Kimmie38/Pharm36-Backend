@@ -50,6 +50,12 @@ async function getOne(req, res) {
 async function create(req, res) {
   const b = req.valid.body;
 
+  // Offline sync retries: the same clientId always returns the batch created the first time.
+  if (b.clientId) {
+    const prior = await Batch.findOne({ owner: req.user._id, clientId: b.clientId });
+    if (prior) return res.status(200).json({ batch: prior, duplicate: true });
+  }
+
   if (!canAddCategory(req.user, b.category)) {
     const cat = getCategory(b.category);
     const council = professionalTypes[req.user.professionalType].councilShort;
